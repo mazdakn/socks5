@@ -6,8 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"log"
 )
+
+type ClientSocket struct {
+    socket  *net.TCPConn
+    status  uint8
+}
 
 type Engine struct {
     conf    Configuration
@@ -63,7 +67,7 @@ func (e *Engine) Start() {
     for {
         cmdCon, err := e.ControlSocket.AcceptTCP()
         if err != nil {
-            log.Println(err)
+            e.Log(err)
         }
 
         go e.ServeClient(cmdCon)
@@ -75,45 +79,30 @@ func (e *Engine) Start() {
 
 func (e *Engine) ServeClient(clientSocket *net.TCPConn) {
     var buffer []byte
+    var err     error
+    var n       int
+    var client  ClientSocket
+
     buffer = make([]byte, 1024)
 
     e.Print("Serving " + clientSocket.RemoteAddr().String())
 
     defer clientSocket.Close()
 
-    for {
-        n, _ := clientSocket.Read(buffer)
-        //if err != nil {
-        //    log.Println(err)
-        //    return
-        //}
+    client.status = 0
+    client.socket = clientSocket
 
-        if n==0 {
-            e.Print(clientSocket.RemoteAddr().String() + "closed connection")
+    for {
+        if n, err = client.socket.Read(buffer); err != nil {
+            e.Log(err)
             return
         }
 
-        e.Print(clientSocket.RemoteAddr().String() + "-> " + string(buffer[:n]))
-    }
-}
+        e.Print(client.socket.RemoteAddr().String() + "-> " + string(buffer[:n]))
 
-func (e *Engine) Print(message string) {
-    log.Println(message)
-}
-
-func (e *Engine) Exit(message string) {
-    log.Println(message)
-    os.Exit(1)
-}
-
-func (e *Engine) Log(err error) {
-    if (err != nil) {
-        log.Println(err)
-    }
-}
-
-func (e *Engine) Fatal(err error) {
-    if (err != nil) {
-        log.Fatal(err)
+        if err = e.DecodeMessage(buffer[:n]); err != nil {
+            e.Log(err)
+            return
+        }
     }
 }
